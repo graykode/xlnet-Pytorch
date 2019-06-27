@@ -61,7 +61,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     sp = BertTokenizer.from_pretrained(args.tokenizer)
-    model = xlnet.XLNet(n_token=len(sp.vocab), n_layer=6, n_head=4, d_head=8, d_model=32,
+    model = xlnet.XLNet(n_token=len(sp.vocab), n_layer=6, n_head=4, d_head=8,
+                        d_inner=32, d_model=32,
                         dropout=0.0, dropatt=0.0,
                         attn_type="bi", bi_data=args.bi_data,
                         clamp_len=-1, same_length=False,
@@ -93,6 +94,6 @@ if __name__ == "__main__":
             permutation['target_mapping'].unsqueeze(-1) # [num_predict, seq_len, 1(=bsz)]
         inp_q = permutation['input_q'].unsqueeze(-1) # [seq_len, 1(=bsz)]
 
-        model(inp_k=inp_k, seg_id=seg_id, input_mask=input_mask,
+        output, new_mems, lookup_table = model(inp_k=inp_k, seg_id=seg_id, input_mask=input_mask,
               mems=mems, perm_mask=perm_mask,
               target_mapping=target_mapping, inp_q=inp_q)

@@ -75,7 +75,7 @@ class XLNet(nn.Module):
           -1 means no clamping.
 
       """
-    def __init__(self, n_token, n_layer, n_head, d_head, d_model, dropout, dropatt,
+    def __init__(self, n_token, n_layer, n_head, d_head, d_inner, d_model, dropout, dropatt,
                  attn_type, bi_data, clamp_len, same_length, reuse_len, mem_len):
         super(XLNet, self).__init__()
 
@@ -83,6 +83,7 @@ class XLNet(nn.Module):
         self.n_layer = n_layer
         self.n_head = n_head
         self.d_head = d_head
+        self.d_inner = d_inner
         self.d_model = d_model
         self.dropout = dropout
         self.dropatt = dropatt
@@ -127,6 +128,26 @@ class XLNet(nn.Module):
 
         self.layer_norm = nn.LayerNorm(d_model)
 
+        self.conv1 = nn.Linear(d_model, d_inner)
+        self.conv2 = nn.Linear(d_inner, d_model)
+        self.relu = nn.ReLU(inplace=True)
+
+
+    def gelu(self, x):
+        """Gaussian Error Linear Unit.
+
+        This is a smoother version of the RELU.
+        Original paper: https://arxiv.org/abs/1606.08415
+        Args:
+          x: float Tensor to perform activation.
+
+        Returns:
+          `x` with the GELU activation applied.
+        """
+        cdf = 0.5 * (1.0 + torch.tanh(
+            (np.sqrt(2 / np.pi) * (x + 0.044715 * tf.pow(x, 3)))))
+        return x * cdf
+
     def rel_shift(self, x, klen=-1):
         """perform relative shift to form the relative attention score."""
         x_size = x.shape
@@ -138,7 +159,20 @@ class XLNet(nn.Module):
 
         return x
 
+    def positionwise_ffn(self, inp, activation_type='relu'):
 
+        """Position-wise Feed-forward Network."""
+        output = self.conv1(inp)
+        output = self.Dropout(output)
+        if activation_type == 'relu':
+            output = self.relu(output)
+        elif activation_type == 'gelu':
+            output = self.gelu(output)
+        else:
+            raise ValueError('Unsupported activation type {}'.format(activation_type))
+
+        output = self.layer_norm(output + inp)
+        return output
 
     def post_attention(self, h, attn_vec, residual=True):
         """Post-attention processing."""
@@ -512,15 +546,13 @@ class XLNet(nn.Module):
                     dropatt=self.dropatt)
 
             if inp_q is not None:
-                output_g = positionwise_ffn(
-                    inp=output_g,
-                    d_model=self.d_model,
-                    d_inner=self.d_inner,
-                    dropout=self.dropout)
+                output_g = self.positionwise_ffn(inp=output_g)
 
-            output_h = positionwise_ffn(
-                inp=output_h,
-                d_model=self.d_model,
-                d_inner=self.d_inner,
-                dropout=self.dropout,
-                reuse=reuse)
+            output_h = self.positionwise_ffn(inp=output_h)
+
+        if inp_q is not None:
+            output = self.Dropout(output_g)
+        else:
+            output = self.Dropout(output_h)
+
+        return output, new_mems, lookup_table
