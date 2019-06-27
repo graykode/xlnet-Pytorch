@@ -178,6 +178,8 @@ def _sample_mask(sp, seg, mask_alpha, mask_beta,
 
 def _create_data(sp, input_paths, seq_len, reuse_len,
                 bi_data, num_predict, mask_alpha, mask_beta):
+    features = []
+
     f = open(input_paths, 'r')
     lines = f.readlines()
     input_data, sent_ids, sent_id = [], [], True
@@ -201,7 +203,6 @@ def _create_data(sp, input_paths, seq_len, reuse_len,
 
     i = 0
     while i + seq_len <= data_len:
-
         inp = data[0, i: i + reuse_len]
         tgt = data[0, i + 1: i + reuse_len + 1]
 
@@ -254,11 +255,12 @@ def _create_data(sp, input_paths, seq_len, reuse_len,
             "seg_id": seg_id,
             "label": [label],
         }
+        features.append(feature)
 
         i += reuse_len
 
     f.close()
-    return feature
+    return features
 
 def _local_perm(inputs, targets, is_masked, perm_size, seq_len):
     """
@@ -321,11 +323,11 @@ def _local_perm(inputs, targets, is_masked, perm_size, seq_len):
 
     return perm_mask, new_targets, target_mask, inputs_k, inputs_q
 
-def make_permute(features, reuse_len, seq_len, perm_size, num_predict):
+def make_permute(feature, reuse_len, seq_len, perm_size, num_predict):
 
-    inputs = torch.LongTensor(features.pop("input"))
-    target = torch.LongTensor(features.pop("target"))
-    is_masked = torch.ByteTensor(features.pop("is_masked"))
+    inputs = torch.LongTensor(feature.pop("input"))
+    target = torch.LongTensor(feature.pop("target"))
+    is_masked = torch.ByteTensor(feature.pop("is_masked"))
 
     non_reuse_len = seq_len - reuse_len
     assert perm_size <= reuse_len and perm_size <= non_reuse_len
@@ -368,28 +370,29 @@ def make_permute(features, reuse_len, seq_len, perm_size, num_predict):
         target_mapping = torch.eye(seq_len, dtype=torch.float32)[indices]
         paddings = torch.zeros([pad_len, seq_len], dtype=target_mapping.dtype)
         target_mapping = torch.cat([target_mapping, paddings], dim=0)
-        features["target_mapping"] = torch.reshape(target_mapping,
+        feature["target_mapping"] = torch.reshape(target_mapping,
                                                 [num_predict, seq_len])
 
         ##### target
         target = target[bool_target_mask]
         paddings = torch.zeros([pad_len], dtype=target.dtype)
         target = torch.cat([target, paddings], dim=0)
-        features["target"] = torch.reshape(target, [num_predict])
+        feature["target"] = torch.reshape(target, [num_predict])
 
         ##### target mask
         target_mask = torch.cat(
             [torch.ones([actual_num_predict], dtype=torch.float32),
              torch.zeros([pad_len], dtype=torch.float32)],
             dim=0)
-        features["target_mask"] = torch.reshape(target_mask, [num_predict])
+        feature["target_mask"] = torch.reshape(target_mask, [num_predict])
     else:
-        features["target"] = torch.reshape(target, [seq_len])
-        features["target_mask"] = torch.reshape(target_mask, [seq_len])
+        feature["target"] = torch.reshape(target, [seq_len])
+        feature["target_mask"] = torch.reshape(target_mask, [seq_len])
 
     # reshape back to fixed shape
-    features["perm_mask"] = torch.reshape(perm_mask, [seq_len, seq_len])
-    features["input_k"] = torch.reshape(input_k, [seq_len])
-    features["input_q"] = torch.reshape(input_q, [seq_len])
+    feature["seg_id"] = torch.IntTensor(feature["seg_id"])
+    feature["perm_mask"] = torch.reshape(perm_mask, [seq_len, seq_len])
+    feature["input_k"] = torch.reshape(input_k, [seq_len])
+    feature["input_q"] = torch.reshape(input_q, [seq_len])
 
-    return features
+    return feature
