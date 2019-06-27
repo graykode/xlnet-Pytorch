@@ -38,143 +38,143 @@ SEP_ID = special_symbols["[SEP]"]
 MASK_ID = special_symbols["[MASK]"]
 
 def _split_a_and_b(data, sent_ids, begin_idx, tot_len, extend_target=False):
-  """Split two segments from `data` starting from the index `begin_idx`."""
+    """Split two segments from `data` starting from the index `begin_idx`."""
 
-  data_len = data.shape[0]
-  if begin_idx + tot_len >= data_len:
-    print("[_split_a_and_b] returns None: "
+    data_len = data.shape[0]
+    if begin_idx + tot_len >= data_len:
+        print("[_split_a_and_b] returns None: "
                 "begin_idx %d + tot_len %d >= data_len %d",
                 begin_idx, tot_len, data_len)
-    return None
+        return None
 
-  end_idx = begin_idx + 1
-  cut_points = []
-  while end_idx < data_len:
-    if sent_ids[end_idx] != sent_ids[end_idx - 1]:
-      if end_idx - begin_idx >= tot_len: break
-      cut_points.append(end_idx)
-    end_idx += 1
+    end_idx = begin_idx + 1
+    cut_points = []
+    while end_idx < data_len:
+        if sent_ids[end_idx] != sent_ids[end_idx - 1]:
+            if end_idx - begin_idx >= tot_len: break
+            cut_points.append(end_idx)
+        end_idx += 1
 
-  a_begin = begin_idx
-  if len(cut_points) == 0 or random.random() < 0.5:
-    label = 0
-    if len(cut_points) == 0:
-      a_end = end_idx
+    a_begin = begin_idx
+    if len(cut_points) == 0 or random.random() < 0.5:
+        label = 0
+        if len(cut_points) == 0:
+            a_end = end_idx
+        else:
+            a_end = random.choice(cut_points)
+
+        b_len = max(1, tot_len - (a_end - a_begin))
+        # (zihang): `data_len - 1` to account for extend_target
+        b_begin = random.randint(0, data_len - 1 - b_len)
+        b_end = b_begin + b_len
+        while b_begin > 0 and sent_ids[b_begin - 1] == sent_ids[b_begin]:
+            b_begin -= 1
+        # (zihang): `data_len - 1` to account for extend_target
+        while b_end < data_len - 1 and sent_ids[b_end - 1] == sent_ids[b_end]:
+            b_end += 1
+
+        new_begin = a_end
     else:
-      a_end = random.choice(cut_points)
+        label = 1
+        a_end = random.choice(cut_points)
+        b_begin = a_end
+        b_end = end_idx
 
-    b_len = max(1, tot_len - (a_end - a_begin))
-    # (zihang): `data_len - 1` to account for extend_target
-    b_begin = random.randint(0, data_len - 1 - b_len)
-    b_end = b_begin + b_len
-    while b_begin > 0 and sent_ids[b_begin - 1] == sent_ids[b_begin]:
-      b_begin -= 1
-    # (zihang): `data_len - 1` to account for extend_target
-    while b_end < data_len - 1 and sent_ids[b_end - 1] == sent_ids[b_end]:
-      b_end += 1
+        new_begin = b_end
 
-    new_begin = a_end
-  else:
-    label = 1
-    a_end = random.choice(cut_points)
-    b_begin = a_end
-    b_end = end_idx
+    while a_end - a_begin + b_end - b_begin > tot_len:
+        if a_end - a_begin > b_end - b_begin:
+            # delete the right side only for the LM objective
+            a_end -= 1
+        else:
+            b_end -= 1
 
-    new_begin = b_end
+    ret = [data[a_begin: a_end], data[b_begin: b_end], label, new_begin]
 
-  while a_end - a_begin + b_end - b_begin > tot_len:
-    if a_end - a_begin > b_end - b_begin:
-      # delete the right side only for the LM objective
-      a_end -= 1
-    else:
-      b_end -= 1
+    if extend_target:
+        if a_end >= data_len or b_end >= data_len:
+            print("[_split_a_and_b] returns None: "
+                          "a_end %d or b_end %d >= data_len %d",
+                          a_end, b_end, data_len)
+            return None
+        a_target = data[a_begin + 1: a_end + 1]
+        b_target = data[b_begin: b_end + 1]
+        ret.extend([a_target, b_target])
 
-  ret = [data[a_begin: a_end], data[b_begin: b_end], label, new_begin]
-
-  if extend_target:
-    if a_end >= data_len or b_end >= data_len:
-      print("[_split_a_and_b] returns None: "
-                      "a_end %d or b_end %d >= data_len %d",
-                      a_end, b_end, data_len)
-      return None
-    a_target = data[a_begin + 1: a_end + 1]
-    b_target = data[b_begin: b_end + 1]
-    ret.extend([a_target, b_target])
-
-  return ret
+    return ret
 
 def _is_start_piece(piece):
-  special_pieces = set(list('!"#$%&\"()*+,-./:;?@[\\]^_`{|}~'))
-  piece = ''.join(piece)
-  if (piece.startswith("▁") or piece.startswith("<")
-      or piece in special_pieces):
-    return True
-  else:
-    return False
+    special_pieces = set(list('!"#$%&\"()*+,-./:;?@[\\]^_`{|}~'))
+    piece = ''.join(piece)
+    if (piece.startswith("▁") or piece.startswith("<")
+        or piece in special_pieces):
+        return True
+    else:
+        return False
 
 def _sample_mask(sp, seg, mask_alpha, mask_beta,
                  reverse=False, max_gram=5, goal_num_predict=None):
-  """Sample `goal_num_predict` tokens for partial prediction.
-  About `mask_beta` tokens are chosen in a context of `mask_alpha` tokens."""
+    """Sample `goal_num_predict` tokens for partial prediction.
+    About `mask_beta` tokens are chosen in a context of `mask_alpha` tokens."""
 
-  seg_len = len(seg)
-  mask = np.array([False] * seg_len, dtype=np.bool)
+    seg_len = len(seg)
+    mask = np.array([False] * seg_len, dtype=np.bool)
 
-  num_predict = 0
+    num_predict = 0
 
-  ngrams = np.arange(1, max_gram + 1, dtype=np.int64)
-  pvals = 1. / np.arange(1, max_gram + 1)
-  pvals /= pvals.sum(keepdims=True)
+    ngrams = np.arange(1, max_gram + 1, dtype=np.int64)
+    pvals = 1. / np.arange(1, max_gram + 1)
+    pvals /= pvals.sum(keepdims=True)
 
-  if reverse:
-    seg = np.flip(seg, 0)
+    if reverse:
+        seg = np.flip(seg, 0)
 
-  cur_len = 0
-  while cur_len < seg_len:
-    if goal_num_predict is not None and num_predict >= goal_num_predict: break
+    cur_len = 0
+    while cur_len < seg_len:
+        if goal_num_predict is not None and num_predict >= goal_num_predict: break
 
-    n = np.random.choice(ngrams, p=pvals)
-    if goal_num_predict is not None:
-      n = min(n, goal_num_predict - num_predict)
-    ctx_size = (n * mask_alpha) // mask_beta
-    l_ctx = np.random.choice(ctx_size)
-    r_ctx = ctx_size - l_ctx
+        n = np.random.choice(ngrams, p=pvals)
+        if goal_num_predict is not None:
+            n = min(n, goal_num_predict - num_predict)
+        ctx_size = (n * mask_alpha) // mask_beta
+        l_ctx = np.random.choice(ctx_size)
+        r_ctx = ctx_size - l_ctx
 
-    # Find the start position of a complete token
-    beg = cur_len + l_ctx
-    while beg < seg_len and not _is_start_piece(sp.convert_ids_to_tokens([seg[beg].item()])):
-      beg += 1
-    if beg >= seg_len:
-      break
+        # Find the start position of a complete token
+        beg = cur_len + l_ctx
+        while beg < seg_len and not _is_start_piece(sp.convert_ids_to_tokens([seg[beg].item()])):
+            beg += 1
+        if beg >= seg_len:
+            break
 
-    # Find the end position of the n-gram (start pos of the n+1-th gram)
-    end = beg + 1
-    cnt_ngram = 1
-    while end < seg_len:
-      if _is_start_piece(sp.convert_ids_to_tokens([seg[beg].item()])):
-        cnt_ngram += 1
-        if cnt_ngram > n:
-          break
-      end += 1
-    if end >= seg_len:
-      break
+        # Find the end position of the n-gram (start pos of the n+1-th gram)
+        end = beg + 1
+        cnt_ngram = 1
+        while end < seg_len:
+            if _is_start_piece(sp.convert_ids_to_tokens([seg[beg].item()])):
+                cnt_ngram += 1
+                if cnt_ngram > n:
+                    break
+            end += 1
+        if end >= seg_len:
+            break
 
-    # Update
-    mask[beg:end] = True
-    num_predict += end - beg
+        # Update
+        mask[beg:end] = True
+        num_predict += end - beg
 
-    cur_len = end + r_ctx
+        cur_len = end + r_ctx
 
-  while goal_num_predict is not None and num_predict < goal_num_predict:
-    i = np.random.randint(seg_len)
-    if not mask[i]:
-      mask[i] = True
-      num_predict += 1
+    while goal_num_predict is not None and num_predict < goal_num_predict:
+        i = np.random.randint(seg_len)
+        if not mask[i]:
+            mask[i] = True
+            num_predict += 1
 
-  if reverse:
-    mask = np.flip(mask, 0)
+    if reverse:
+        mask = np.flip(mask, 0)
 
-  return mask
+    return mask
 
 def _create_data(sp, input_paths, seq_len, reuse_len,
                 bi_data, num_predict, mask_alpha, mask_beta):
@@ -185,7 +185,6 @@ def _create_data(sp, input_paths, seq_len, reuse_len,
     for line in lines:
         tokens = sp.tokenize(line)
         cur_sent = sp.convert_tokens_to_ids(tokens)
-
         input_data.extend(cur_sent)
         sent_ids.extend([sent_id] * len(cur_sent))
         sent_id = not sent_id
@@ -262,11 +261,11 @@ def _create_data(sp, input_paths, seq_len, reuse_len,
     return feature
 
 def _local_perm(inputs, targets, is_masked, perm_size, seq_len):
-  """
-  Sample a permutation of the factorization order, and create an
-  attention mask accordingly.
+    """
+    Sample a permutation of the factorization order, and create an
+    attention mask accordingly.
 
-  Args:
+    Args:
     inputs: int64 Tensor in shape [seq_len], input ids.
     targets: int64 Tensor in shape [seq_len], target ids.
     is_masked: bool Tensor in shape [seq_len]. True means being selected
@@ -274,53 +273,53 @@ def _local_perm(inputs, targets, is_masked, perm_size, seq_len):
     perm_size: the length of longest permutation. Could be set to be reuse_len.
       Should not be larger than reuse_len or there will be data leaks.
     seq_len: int, sequence length.
-  """
+    """
 
-  # Generate permutation indices
-  index = torch.arange(seq_len, dtype=torch.int64)
+    # Generate permutation indices
+    index = torch.arange(seq_len, dtype=torch.int64)
 
-  index = torch.reshape(index, [-1, perm_size]).t()
-  index = index[torch.randperm(index.shape[0])]
-  index = torch.reshape(index.t(), [-1])
+    index = torch.reshape(index, [-1, perm_size]).t()
+    index = index[torch.randperm(index.shape[0])]
+    index = torch.reshape(index.t(), [-1])
 
-  # `perm_mask` and `target_mask`
-  # non-functional tokens
-  non_func_tokens = ~(torch.eq(inputs, SEP_ID) | torch.eq(inputs, CLS_ID))
-  non_mask_tokens = (~is_masked) & non_func_tokens
-  masked_or_func_tokens = ~non_mask_tokens
+    # `perm_mask` and `target_mask`
+    # non-functional tokens
+    non_func_tokens = ~(torch.eq(inputs, SEP_ID) | torch.eq(inputs, CLS_ID))
+    non_mask_tokens = (~is_masked) & non_func_tokens
+    masked_or_func_tokens = ~non_mask_tokens
 
-  # Set the permutation indices of non-masked (& non-funcional) tokens to the
-  # smallest index (-1):
-  # (1) they can be seen by all other positions
-  # (2) they cannot see masked positions, so there won"t be information leak
-  smallest_index = -torch.ones([seq_len], dtype=torch.int64)
-  rev_index = torch.where(non_mask_tokens, smallest_index, index)
+    # Set the permutation indices of non-masked (& non-funcional) tokens to the
+    # smallest index (-1):
+    # (1) they can be seen by all other positions
+    # (2) they cannot see masked positions, so there won"t be information leak
+    smallest_index = -torch.ones([seq_len], dtype=torch.int64)
+    rev_index = torch.where(non_mask_tokens, smallest_index, index)
 
-  # Create `target_mask`: non-funcional and maksed tokens
-  # 1: use mask as input and have loss
-  # 0: use token (or [SEP], [CLS]) as input and do not have loss
-  target_tokens = masked_or_func_tokens & non_func_tokens
-  target_mask = target_tokens.type(torch.float32)
+    # Create `target_mask`: non-funcional and maksed tokens
+    # 1: use mask as input and have loss
+    # 0: use token (or [SEP], [CLS]) as input and do not have loss
+    target_tokens = masked_or_func_tokens & non_func_tokens
+    target_mask = target_tokens.type(torch.float32)
 
-  # Create `perm_mask`
-  # `target_tokens` cannot see themselves
-  self_rev_index = torch.where(target_tokens, rev_index, rev_index + 1)
+    # Create `perm_mask`
+    # `target_tokens` cannot see themselves
+    self_rev_index = torch.where(target_tokens, rev_index, rev_index + 1)
 
-  # 1: cannot attend if i <= j and j is not non-masked (masked_or_func_tokens)
-  # 0: can attend if i > j or j is non-masked
-  perm_mask = (self_rev_index[:, None] <= rev_index[None, :]) &  masked_or_func_tokens
-  perm_mask = perm_mask.type(torch.float32)
+    # 1: cannot attend if i <= j and j is not non-masked (masked_or_func_tokens)
+    # 0: can attend if i > j or j is non-masked
+    perm_mask = (self_rev_index[:, None] <= rev_index[None, :]) &  masked_or_func_tokens
+    perm_mask = perm_mask.type(torch.float32)
 
-  # new target: [next token] for LM and [curr token] (self) for PLM
-  new_targets = torch.cat([inputs[0: 1], targets[: -1]], dim=0)
+    # new target: [next token] for LM and [curr token] (self) for PLM
+    new_targets = torch.cat([inputs[0: 1], targets[: -1]], dim=0)
 
-  # construct inputs_k
-  inputs_k = inputs
+    # construct inputs_k
+    inputs_k = inputs
 
-  # construct inputs_q
-  inputs_q = target_mask
+    # construct inputs_q
+    inputs_q = target_mask
 
-  return perm_mask, new_targets, target_mask, inputs_k, inputs_q
+    return perm_mask, new_targets, target_mask, inputs_k, inputs_q
 
 def make_permute(features, reuse_len, seq_len, perm_size, num_predict):
 
