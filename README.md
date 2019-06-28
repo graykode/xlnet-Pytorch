@@ -81,6 +81,6 @@ Also, You can run code in [Google Colab](https://colab.research.google.com/githu
 
 ## Author
 
-- Because the original repository is subject to the apache2.0 license, it is subject to the same license.
+- Because the original repository is subject to the **Apache2.0 license**, it is subject to the same license.
 - Tae Hwan Jung(Jeff Jung) @graykode, Kyung Hee Univ CE(Undergraduate).
 - Author Email : [nlkey2022@gmail.com](mailto:nlkey2022@gmail.com)
