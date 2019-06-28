@@ -53,7 +53,7 @@ if __name__ == "__main__":
     parser.add_argument('--mem_len', type=int,
                         default=384, help="Number of steps to cache")
     parser.add_argument('--num_step', type=int,
-                        default=5, help="Number of steps")
+                        default=100, help="Number of steps")
 
     args = parser.parse_args()
 
@@ -66,7 +66,8 @@ if __name__ == "__main__":
                         reuse_len=args.reuse_len, mem_len=args.mem_len)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=10 ** -5)
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.01)
+    mems = None
 
     for num_step in range(args.num_step):
 
@@ -79,7 +80,6 @@ if __name__ == "__main__":
                                            mask_alpha=args.mask_alpha,
                                            mask_beta=args.mask_beta)
 
-        mems = None
         for feature in features:
             permutation = data_utils.make_permute(feature,
                                                   reuse_len=args.reuse_len,
