@@ -2,7 +2,7 @@
 
 **Simple XLNet implementation with Pytorch Wrapper!**
 
-You can see XLNet Architecture with small batch size(=1) example.
+#### You can see How XLNet Architecture work in pre-training with small batch size(=1) example.
 
 #### To Usage
 
@@ -13,12 +13,17 @@ $ git clone https://github.com/graykode/xlnet-Pytorch && cd xlnet-Pytorch
 $ pip install pytorch_pretrained_bert
 
 $ python main.py --data ./data.txt --tokenizer bert-base-uncased \
-								 --seq_len 512 --reuse_len 256 --perm_size 256 \
-								 --bi_data True --mask_alpha 6 --mask_beta 1 \
-								 --num_predict 85 --mem_len 384 --num_step 100
+   --seq_len 512 --reuse_len 256 --perm_size 256 \
+   --bi_data True --mask_alpha 6 --mask_beta 1 \
+   --num_predict 85 --mem_len 384 --num_step 100
 ```
 
 Also, You can run code in [Google Colab](https://colab.research.google.com/github/graykode/xlnet-Pytorch/blob/master/XLNet.ipynb) easily.
+
+- Hyperparameters for Pretraining in Paper.
+
+<p align="center"><img width="300" src="images/hyperparameters.png" /> </p>
+
 
 #### Option
 
@@ -63,7 +68,7 @@ Also, You can run code in [Google Colab](https://colab.research.google.com/githu
 2. Permutation Language Modeling with Partial Prediction
    - Permutation Language Modeling
     ![](images/PLM.png)
-     
+   
 - Partial Prediction
   ![](images/ParPrediction.png)
   
