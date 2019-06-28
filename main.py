@@ -52,53 +52,64 @@ if __name__ == "__main__":
                         default=85, help="Num of tokens to predict.")
     parser.add_argument('--mem_len', type=int,
                         default=384, help="Number of steps to cache")
+    parser.add_argument('--num_step', type=int,
+                        default=5, help="Number of steps")
 
     args = parser.parse_args()
 
     sp = BertTokenizer.from_pretrained(args.tokenizer)
     model = xlnet.XLNet(n_token=len(sp.vocab), n_layer=6, n_head=4, d_head=8,
                         d_inner=32, d_model=32,
-                        dropout=0.0, dropatt=0.0,
+                        dropout=0.1, dropatt=0.1,
                         attn_type="bi", bi_data=args.bi_data,
                         clamp_len=-1, same_length=False,
                         reuse_len=args.reuse_len, mem_len=args.mem_len)
 
-    features = data_utils._create_data(sp=sp,
-                            input_paths=args.data,
-                            seq_len=args.seq_len,
-                            reuse_len=args.reuse_len,
-                            bi_data=args.bi_data,
-                            num_predict=args.num_predict,
-                            mask_alpha=args.mask_alpha,
-                            mask_beta=args.mask_beta)
-
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=10 ** -5)
 
-    mems = None
-    for feature in features:
-        permutation = data_utils.make_permute(feature,
-                                              reuse_len=args.reuse_len,
-                                              seq_len=args.seq_len,
-                                              perm_size=args.perm_size,
-                                              num_predict=args.num_predict)
+    for num_step in range(args.num_step):
 
-        # batch size is 1
-        inp_k = permutation['input_k'].unsqueeze(-1) # [seq_len, 1(=bsz)]
-        seg_id = permutation['seg_id'].unsqueeze(-1) # [seq_len, 1(=bsz)]
-        target = permutation['target'].unsqueeze(-1) # [seq_len, 1(=bsz)]
-        perm_mask = permutation['perm_mask'].unsqueeze(-1) # [seq_len, seq_len, 1(=bsz)]
-        target_mapping = \
-            permutation['target_mapping'].unsqueeze(-1) # [num_predict, seq_len, 1(=bsz)]
-        inp_q = permutation['input_q'].unsqueeze(-1) # [seq_len, 1(=bsz)]
-        tgt_mask = permutation['target_mask'].unsqueeze(-1) # [num_predict, 1(=bsz)]
+        features = data_utils._create_data(sp=sp,
+                                           input_paths=args.data,
+                                           seq_len=args.seq_len,
+                                           reuse_len=args.reuse_len,
+                                           bi_data=args.bi_data,
+                                           num_predict=args.num_predict,
+                                           mask_alpha=args.mask_alpha,
+                                           mask_beta=args.mask_beta)
 
-        logits, new_mems = model(inp_k=inp_k, seg_id=seg_id, input_mask=None,
-              mems=mems, perm_mask=perm_mask,
-              target_mapping=target_mapping, inp_q=inp_q)
+        mems = None
+        for feature in features:
+            permutation = data_utils.make_permute(feature,
+                                                  reuse_len=args.reuse_len,
+                                                  seq_len=args.seq_len,
+                                                  perm_size=args.perm_size,
+                                                  num_predict=args.num_predict)
 
-        #lm_loss = criterion(logits.transpose(1, 2), target).type(torch.float32)
-        #total_loss = lm_loss.sum(lm_loss * tgt_mask.reshape(-1)) / torch.sum(tgt_mask.reshape(-1))
-        #print(total_loss.shape)
+            # batch size is 1
+            inp_k = permutation['input_k'].unsqueeze(-1) # [seq_len, 1(=bsz)]
+            seg_id = permutation['seg_id'].unsqueeze(-1) # [seq_len, 1(=bsz)]
+            target = permutation['target'].unsqueeze(-1) # [seq_len, 1(=bsz)]
+            perm_mask = permutation['perm_mask'].unsqueeze(-1) # [seq_len, seq_len, 1(=bsz)]
+            target_mapping = \
+                permutation['target_mapping'].unsqueeze(-1) # [num_predict, seq_len, 1(=bsz)]
+            inp_q = permutation['input_q'].unsqueeze(-1) # [seq_len, 1(=bsz)]
+            tgt_mask = permutation['target_mask'].unsqueeze(-1) # [num_predict, 1(=bsz)]
 
-        mems = new_mems
+            logits, new_mems = model(inp_k=inp_k, seg_id=seg_id, input_mask=None,
+                  mems=mems, perm_mask=perm_mask,
+                  target_mapping=target_mapping, inp_q=inp_q)
+
+            lm_loss = criterion(logits.transpose(1, 2), target).type(torch.float32)
+            tgt_mask_sum = tgt_mask.reshape(-1).sum().item()
+
+            optimizer.zero_grad()
+            total_loss = (lm_loss * tgt_mask_sum) / tgt_mask_sum
+            print('Number of Step:', '%04d' % (num_step + 1),
+                  'cost =', '{:.6f}'.format(total_loss))
+
+            total_loss.backward()
+            optimizer.step()
+
+            mems = new_mems
