@@ -42,7 +42,7 @@ if __name__ == "__main__":
     parser.add_argument('--perm_size', type=int,
                         default=256,
                         help="the length of longest permutation. Could be set to be reuse_len.")
-    parser.add_argument('--bi_data', type=bool, default=True,
+    parser.add_argument('--bi_data', type=bool, default=False,
                         help="whether to create bidirectional data")
     parser.add_argument('--mask_alpha', type=int,
                         default=6, help="How many tokens to form a group.")
