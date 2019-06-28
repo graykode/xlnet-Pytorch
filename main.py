@@ -25,15 +25,10 @@ import argparse
 
 import xlnet
 import torch
+import numpy as np
+import torch.nn as nn
+import torch.optim as optim
 from pytorch_pretrained_bert import BertTokenizer
-
-def two_stream_loss(features, labels, mems, is_training):
-    """Pretraining loss with two-stream attention Transformer-XL."""
-
-    #### Unpack input
-    mem_name = "mems"
-    mems = mems.get(mem_name, None)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='PyTorch XLNet Language Model')
@@ -77,6 +72,10 @@ if __name__ == "__main__":
                             mask_alpha=args.mask_alpha,
                             mask_beta=args.mask_beta)
 
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    mems = None
     for feature in features:
         permutation = data_utils.make_permute(feature,
                                               reuse_len=args.reuse_len,
@@ -87,13 +86,19 @@ if __name__ == "__main__":
         # batch size is 1
         inp_k = permutation['input_k'].unsqueeze(-1) # [seq_len, 1(=bsz)]
         seg_id = permutation['seg_id'].unsqueeze(-1) # [seq_len, 1(=bsz)]
-        input_mask = None
-        mems = None
+        target = permutation['target'].unsqueeze(-1) # [seq_len, 1(=bsz)]
         perm_mask = permutation['perm_mask'].unsqueeze(-1) # [seq_len, seq_len, 1(=bsz)]
         target_mapping = \
             permutation['target_mapping'].unsqueeze(-1) # [num_predict, seq_len, 1(=bsz)]
         inp_q = permutation['input_q'].unsqueeze(-1) # [seq_len, 1(=bsz)]
+        tgt_mask = permutation['target_mask'].unsqueeze(-1) # [num_predict, 1(=bsz)]
 
-        output, new_mems, lookup_table = model(inp_k=inp_k, seg_id=seg_id, input_mask=input_mask,
+        logits, new_mems = model(inp_k=inp_k, seg_id=seg_id, input_mask=None,
               mems=mems, perm_mask=perm_mask,
               target_mapping=target_mapping, inp_q=inp_q)
+
+        #lm_loss = criterion(logits.transpose(1, 2), target).type(torch.float32)
+        #total_loss = lm_loss.sum(lm_loss * tgt_mask.reshape(-1)) / torch.sum(tgt_mask.reshape(-1))
+        #print(total_loss.shape)
+
+        mems = new_mems

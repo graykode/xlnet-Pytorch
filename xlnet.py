@@ -60,7 +60,6 @@ class XLNet(nn.Module):
         d_head: int, the dimension size of each attention head.
         d_inner: int, the hidden size in feed-forward layers.
         ff_activation: str, "relu" or "gelu".
-        untie_r: bool, whether to untie the biases in attention.
         n_token: int, the vocab size.
 
         dropout: float, dropout rate.
@@ -98,32 +97,32 @@ class XLNet(nn.Module):
         self.Dropout = nn.Dropout(p=dropout)
         self.DropAttn = nn.Dropout(p=dropatt)
 
-        self.r_w_bias = nn.Parameter(torch.Tensor(self.n_layer,
+        self.r_w_bias = nn.Parameter(torch.randn(self.n_layer,
                                                   self.n_head,self.d_head))
-        self.r_r_bias = nn.Parameter(torch.Tensor(self.n_layer,
+        self.r_r_bias = nn.Parameter(torch.randn(self.n_layer,
                                                   self.n_head, self.d_head))
 
         ##### Segment embedding
-        self.r_s_bias = nn.Parameter(torch.Tensor(self.n_layer,
+        self.r_s_bias = nn.Parameter(torch.randn(self.n_layer,
                                                   self.n_head,self.d_head))
 
-        self.seg_embed = nn.Parameter(torch.Tensor(self.n_layer, 2,
+        self.seg_embed = nn.Parameter(torch.randn(self.n_layer, 2,
                                                    self.n_head, self.d_head))
 
-        self.mask_emb = nn.Parameter(torch.Tensor(1, 1, d_model))
+        self.mask_emb = nn.Parameter(torch.randn(1, 1, d_model))
 
         # post-attention projection (back to `d_model`)
-        self.proj_o = nn.Parameter(torch.Tensor(self.d_model,
+        self.proj_o = nn.Parameter(torch.randn(self.d_model,
                                                 self.n_head, self.d_head))
 
         #### Project hidden states to a specific head with a 4D-shape.
-        self.q_proj_weight = nn.Parameter(torch.Tensor(self.d_model,
+        self.q_proj_weight = nn.Parameter(torch.randn(self.d_model,
                                                        self.n_head, self.d_head))
-        self.k_proj_weight = nn.Parameter(torch.Tensor(self.d_model,
+        self.k_proj_weight = nn.Parameter(torch.randn(self.d_model,
                                                        self.n_head, self.d_head))
-        self.v_proj_weight = nn.Parameter(torch.Tensor(self.d_model,
+        self.v_proj_weight = nn.Parameter(torch.randn(self.d_model,
                                                        self.n_head, self.d_head))
-        self.r_proj_weight = nn.Parameter(torch.Tensor(self.d_model,
+        self.r_proj_weight = nn.Parameter(torch.randn(self.d_model,
                                                        self.n_head, self.d_head))
 
         self.layer_norm = nn.LayerNorm(d_model)
@@ -131,6 +130,8 @@ class XLNet(nn.Module):
         self.conv1 = nn.Linear(d_model, d_inner)
         self.conv2 = nn.Linear(d_inner, d_model)
         self.relu = nn.ReLU(inplace=True)
+
+        self.softmax_b = nn.Parameter(torch.zeros(self.n_token))
 
 
     def gelu(self, x):
@@ -145,7 +146,7 @@ class XLNet(nn.Module):
           `x` with the GELU activation applied.
         """
         cdf = 0.5 * (1.0 + torch.tanh(
-            (np.sqrt(2 / np.pi) * (x + 0.044715 * tf.pow(x, 3)))))
+            (np.sqrt(2 / np.pi) * (x + 0.044715 * torch.pow(x, 3)))))
         return x * cdf
 
     def rel_shift(self, x, klen=-1):
@@ -269,9 +270,8 @@ class XLNet(nn.Module):
         return output
 
     def two_stream_rel_attn(self, h, g, r, mems, r_w_bias, r_r_bias, seg_mat, r_s_bias,
-                            seg_embed, attn_mask_h, attn_mask_g, target_mapping,
-                            d_model, n_head, d_head, dropout, dropatt):
-        scale = 1 / (d_head ** 0.5)
+                            seg_embed, attn_mask_h, attn_mask_g, target_mapping):
+        scale = 1 / (self.d_head ** 0.5)
 
         # content based attention score
         if mems is not None and len(mems.size()) > 1:
@@ -293,6 +293,7 @@ class XLNet(nn.Module):
         q_head_h = self.head_projection(h, 'q')
 
         # core attention ops
+        # hˆ(m)_zt = LayerNorm(h^(m-1)_zt + RelAttn(h^(m-1)_zt + [h~^(m-1), hT(m-1)_z<=t]))
         attn_vec_h = self.rel_attn_core(
             q_head_h, k_head_h, v_head_h, k_head_r, seg_embed, seg_mat, r_w_bias,
             r_r_bias, r_s_bias, attn_mask_h, scale)
@@ -305,6 +306,7 @@ class XLNet(nn.Module):
         q_head_g = self.head_projection(g, 'q')
 
         # core attention ops
+        # gˆ(m)_zt = LayerNorm(g^(m-1)_zt + RelAttn(g^(m-1)_zt + [h~^(m-1), hT(m-1)_z<=t]))
         if target_mapping is not None:
             q_head_g = torch.einsum('mbnd,mlb->lbnd', q_head_g, target_mapping)
             attn_vec_g = self.rel_attn_core(
@@ -322,19 +324,24 @@ class XLNet(nn.Module):
         return output_h, output_g
 
 
-    def _create_mask(self, qlen, mlen, dtype=torch.float32, same_length=False):
+    def _create_mask(self, qlen, mlen, dtype, same_length=False):
         """create causal attention mask."""
-
+        # [[0,1,1],
+        #  [0,0,1],
+        #  [0,0,0]]
         attn_mask = torch.ones([qlen, qlen], dtype=dtype)
         mask_u = torch.triu(attn_mask) # Upper triangular part.
-        mask_dia = torch.tril(attn_mask) & torch.triu(attn_mask) # Diagonal.
+        mask_dia = torch.tril(attn_mask) & torch.triu(attn_mask) # Diagonal. Figure 2(c)
         attn_mask_pad = torch.zeros([qlen, mlen], dtype=dtype)
-        ret = torch.cat([attn_mask_pad, mask_u - mask_dia], dim=1)
+        ret = torch.cat([attn_mask_pad, mask_u - mask_dia], dim=1) # [qlen, mlen]
         if same_length:
+            # [[0,1,1],
+            #  [1,0,1],
+            #  [1,1,0]]
             mask_l = torch.tril(attn_mask) # Lower triangular part.
             ret = torch.cat([ret[:, :qlen] + mask_l - mask_dia, ret[:, qlen:]], dim=1)
 
-        return ret
+        return ret.type(dtype=torch.float32) # [qlen, qlen]
 
     def positional_embedding(self, pos_seq, inv_freq):
         sinusoid_inp = torch.einsum('i,d->id', pos_seq, inv_freq)
@@ -379,7 +386,7 @@ class XLNet(nn.Module):
         else:
             raise ValueError('Unknown `attn_type` {}.'.format(attn_type))
 
-        if bi_data and bsz is not 1:
+        if bi_data and bsz%2 is 0:
             fwd_pos_seq = torch.arange(beg, end, -1.0)
             bwd_pos_seq = torch.arange(-beg, -end, 1.0)
 
@@ -416,7 +423,7 @@ class XLNet(nn.Module):
         ##### Attention mask
         # causal attention mask
         if self.attn_type == 'uni':
-            attn_mask = self._create_mask(qlen, mlen, torch.float32, self.same_length)
+            attn_mask = self._create_mask(qlen, mlen, torch.int64, self.same_length)
             attn_mask = attn_mask[:, :, None, None]
         elif self.attn_type == 'bi':
             attn_mask = None
@@ -447,8 +454,8 @@ class XLNet(nn.Module):
             attn_mask = attn_mask.gt(0).type(torch.float32)
 
         if attn_mask is not None:
-            non_tgt_mask = -torch.eye(qlen, dtype=torch.float32)
-            non_tgt_mask = torch.cat([torch.zeros([qlen, mlen], dtype=torch.float32),
+            non_tgt_mask = -torch.eye(qlen, dtype=torch.float32) # [qlen, qlen]
+            non_tgt_mask = torch.cat([torch.zeros([qlen, mlen], dtype=torch.float32), # [qlen, klen]
                                         non_tgt_mask],
                                         dim=-1)
             non_tgt_mask = (attn_mask +
@@ -467,12 +474,17 @@ class XLNet(nn.Module):
                 inp_q_ext = inp_q[:, :, None]
                 word_emb_q = inp_q_ext * self.mask_emb + (1 - inp_q_ext) * word_emb_k
 
-        #### Figure 2(b) in 1906.08237.pdf
+        #### Figure 2(a), Content Stream(Original Attention), h^(0)_t = e(x_i) = e(inp_k)
         output_h = self.Dropout(word_emb_k)
         if inp_q is not None:
+            #### Query Stream, g^(0)_t = w
+            #### the first layer query stream is initialized with a trainable vector
             output_g = self.Dropout(word_emb_q)
 
         ##### Segment embedding
+        # paper
+        # Given a pair of positions i and j in the sequence, if
+        # i and j are from the same segment
         if seg_id is not None:
             # Convert `seg_id` to one-hot `seg_mat`
             mem_pad = torch.zeros([mlen, bsz], dtype=torch.int32)
@@ -519,16 +531,8 @@ class XLNet(nn.Module):
                     attn_mask_h=non_tgt_mask,
                     attn_mask_g=attn_mask,
                     mems=mems[i],
-                    target_mapping=target_mapping,
-                    d_model=self.d_model,
-                    n_head=self.n_head,
-                    d_head=self.d_head,
-                    dropout=self.dropout,
-                    dropatt=self.dropatt)
-                reuse = True
+                    target_mapping=target_mapping)
             else:
-                reuse = False
-
                 output_h = self.rel_multihead_attn(
                     h=output_h,
                     r=pos_emb,
@@ -538,12 +542,7 @@ class XLNet(nn.Module):
                     r_s_bias=r_s_bias_i,
                     seg_embed=seg_embed_i,
                     attn_mask=non_tgt_mask,
-                    mems=mems[i],
-                    d_model=self.d_model,
-                    n_head=self.n_head,
-                    d_head=self.d_head,
-                    dropout=self.dropout,
-                    dropatt=self.dropatt)
+                    mems=mems[i])
 
             if inp_q is not None:
                 output_g = self.positionwise_ffn(inp=output_g)
@@ -555,4 +554,6 @@ class XLNet(nn.Module):
         else:
             output = self.Dropout(output_h)
 
-        return output, new_mems, lookup_table
+        logits = torch.einsum('ibd,nd->ibn', output, lookup_table.weight) + self.softmax_b
+
+        return logits, new_mems

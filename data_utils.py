@@ -57,6 +57,7 @@ def _split_a_and_b(data, sent_ids, begin_idx, tot_len, extend_target=False):
 
     a_begin = begin_idx
     if len(cut_points) == 0 or random.random() < 0.5:
+        # NotNext
         label = 0
         if len(cut_points) == 0:
             a_end = end_idx
@@ -75,6 +76,7 @@ def _split_a_and_b(data, sent_ids, begin_idx, tot_len, extend_target=False):
 
         new_begin = a_end
     else:
+        # isNext
         label = 1
         a_end = random.choice(cut_points)
         b_begin = a_end
@@ -207,7 +209,7 @@ def _create_data(sp, input_paths, seq_len, reuse_len,
         tgt = data[0, i + 1: i + reuse_len + 1]
 
         results = _split_a_and_b(
-            data[0],
+            data[0], # all line in one Text file.
             sent_ids[0],
             begin_idx=i + reuse_len,
             tot_len=seq_len - reuse_len - 3,
@@ -295,6 +297,8 @@ def _local_perm(inputs, targets, is_masked, perm_size, seq_len):
     # (1) they can be seen by all other positions
     # (2) they cannot see masked positions, so there won"t be information leak
     smallest_index = -torch.ones([seq_len], dtype=torch.int64)
+
+    # put -1 if `non_mask_tokens(real token not cls or sep)` not permutation index
     rev_index = torch.where(non_mask_tokens, smallest_index, index)
 
     # Create `target_mask`: non-funcional and maksed tokens
@@ -305,6 +309,7 @@ def _local_perm(inputs, targets, is_masked, perm_size, seq_len):
 
     # Create `perm_mask`
     # `target_tokens` cannot see themselves
+    # put `rev_index` if real mask(not cls or sep) else `rev_index + 1`
     self_rev_index = torch.where(target_tokens, rev_index, rev_index + 1)
 
     # 1: cannot attend if i <= j and j is not non-masked (masked_or_func_tokens)
@@ -333,14 +338,14 @@ def make_permute(feature, reuse_len, seq_len, perm_size, num_predict):
     assert perm_size <= reuse_len and perm_size <= non_reuse_len
 
     perm_mask_0, target_0, target_mask_0, input_k_0, input_q_0 = _local_perm(
-        inputs[:reuse_len],
+        inputs[:reuse_len], # inp
         target[:reuse_len],
         is_masked[:reuse_len],
         perm_size,
         reuse_len)
 
     perm_mask_1, target_1, target_mask_1, input_k_1, input_q_1 = _local_perm(
-        inputs[reuse_len:],
+        inputs[reuse_len:], # (senA, seq, senBm seq, cls)
         target[reuse_len:],
         is_masked[reuse_len:],
         perm_size,
@@ -366,13 +371,14 @@ def make_permute(feature, reuse_len, seq_len, perm_size, num_predict):
         actual_num_predict = indices.shape[0]
         pad_len = num_predict - actual_num_predict
 
+        assert seq_len >= actual_num_predict
+
         ##### target_mapping
         target_mapping = torch.eye(seq_len, dtype=torch.float32)[indices]
         paddings = torch.zeros([pad_len, seq_len], dtype=target_mapping.dtype)
         target_mapping = torch.cat([target_mapping, paddings], dim=0)
         feature["target_mapping"] = torch.reshape(target_mapping,
                                                 [num_predict, seq_len])
-
         ##### target
         target = target[bool_target_mask]
         paddings = torch.zeros([pad_len], dtype=target.dtype)
