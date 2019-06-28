@@ -24,11 +24,10 @@ Also, You can run code in [Google Colab](https://colab.research.google.com/githu
 
 <p align="center"><img width="300" src="images/hyperparameters.png" /> </p>
 
-
 #### Option
 
 - `—data`(String) : `.txt` file to train. It doesn't matter multiline text. Also, one file will be one batch tensor. Default : `data.txt`
-- `—tokenizer`(String) : Sentence Piece Tokenizer(pretrained-BERT Tokenizer). I just used [huggingface/pytorch-pretrained-BERT's Tokenizer](https://github.com/huggingface/pytorch-pretrained-BERT) because both(BERT, XLNet) use the sentence piece. you can choose in `bert-base-uncased`, `bert-large-uncased`, `bert-base-cased`, `bert-large-cased`. Default : `bert-base-uncased`
+- `—tokenizer`(String) : I just used [huggingface/pytorch-pretrained-BERT's Tokenizer](https://github.com/huggingface/pytorch-pretrained-BERT) as subword tokenizer(I'll edit it to sentence piece soon). you can choose in `bert-base-uncased`, `bert-large-uncased`, `bert-base-cased`, `bert-large-cased`. Default : `bert-base-uncased`
 - `—seq_len`(Integer) : Sequence length. Default : `512`
 - `—reuse_len`(Interger) : Number of token that can be reused as memory. Could be half of `seq_len`. Default : `256`
 - `—perm_size`(Interger) : the length of longest permutation. Could be set to be reuse_len. Default : `256`
