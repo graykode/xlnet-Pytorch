@@ -68,8 +68,8 @@ Also, You can run code in [Google Colab](https://colab.research.google.com/githu
    - Permutation Language Modeling
     ![](images/PLM.png)
    
-- Partial Prediction
-  ![](images/ParPrediction.png)
+   - Partial Prediction
+    ![](images/ParPrediction.png)
   
 3. Two-Stream Self-Attention with Target-Aware Representation
 
