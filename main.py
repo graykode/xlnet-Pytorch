@@ -52,8 +52,8 @@ if __name__ == "__main__":
                         default=85, help="Num of tokens to predict.")
     parser.add_argument('--mem_len', type=int,
                         default=384, help="Number of steps to cache")
-    parser.add_argument('--num_step', type=int,
-                        default=100, help="Number of steps")
+    parser.add_argument('--num_epoch', type=int,
+                        default=100, help="Number of epochs")
 
     args = parser.parse_args()
 
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.01)
     mems = None
 
-    for num_step in range(args.num_step):
+    for num_epoch in range(args.num_epoch):
 
         features = data_utils._create_data(sp=sp,
                                            input_paths=args.data,
@@ -80,6 +80,7 @@ if __name__ == "__main__":
                                            mask_alpha=args.mask_alpha,
                                            mask_beta=args.mask_beta)
 
+        num_step = 0
         for feature in features:
             permutation = data_utils.make_permute(feature,
                                                   reuse_len=args.reuse_len,
@@ -107,8 +108,9 @@ if __name__ == "__main__":
 
             optimizer.zero_grad()
             total_loss = lm_loss_sum / tgt_mask_sum
-            print('Number of Step:', '%04d' % (num_step + 1),
+            print('Number of Epoch: %04d in %04d Step' % ((num_epoch + 1), (num_step + 1)),
                   'cost =', '{:.6f}'.format(total_loss))
+            num_step += 1
 
             total_loss.backward()
             optimizer.step()
