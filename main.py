@@ -90,7 +90,7 @@ if __name__ == "__main__":
             # batch size is 1
             inp_k = permutation['input_k'].unsqueeze(-1) # [seq_len, 1(=bsz)]
             seg_id = permutation['seg_id'].unsqueeze(-1) # [seq_len, 1(=bsz)]
-            target = permutation['target'].unsqueeze(-1) # [seq_len, 1(=bsz)]
+            target = permutation['target'].unsqueeze(-1) # [num_predict, 1(=bsz)]
             perm_mask = permutation['perm_mask'].unsqueeze(-1) # [seq_len, seq_len, 1(=bsz)]
             target_mapping = \
                 permutation['target_mapping'].unsqueeze(-1) # [num_predict, seq_len, 1(=bsz)]
@@ -102,10 +102,11 @@ if __name__ == "__main__":
                   target_mapping=target_mapping, inp_q=inp_q)
 
             lm_loss = criterion(logits.transpose(1, 2), target).type(torch.float32)
-            tgt_mask_sum = tgt_mask.reshape(-1).sum().item()
+            tgt_mask_sum = tgt_mask.reshape(-1).sum()
+            lm_loss_sum = (lm_loss * tgt_mask).reshape(-1).sum()
 
             optimizer.zero_grad()
-            total_loss = (lm_loss * tgt_mask_sum) / tgt_mask_sum
+            total_loss = lm_loss_sum / tgt_mask_sum
             print('Number of Step:', '%04d' % (num_step + 1),
                   'cost =', '{:.6f}'.format(total_loss))
 
