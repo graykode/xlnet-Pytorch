@@ -67,9 +67,9 @@ if __name__ == "__main__":
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.01)
-    mems = None
 
     for num_epoch in range(args.num_epoch):
+        mems = None
 
         features = data_utils._create_data(sp=sp,
                                            input_paths=args.data,

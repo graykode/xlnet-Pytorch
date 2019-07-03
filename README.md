@@ -15,7 +15,7 @@ $ pip install pytorch_pretrained_bert
 $ python main.py --data ./data.txt --tokenizer bert-base-uncased \
    --seq_len 512 --reuse_len 256 --perm_size 256 \
    --bi_data True --mask_alpha 6 --mask_beta 1 \
-   --num_predict 85 --mem_len 384 --num_step 100
+   --num_predict 85 --mem_len 384 --num_epoch 100
 ```
 
 Also, You can run code in [Google Colab](https://colab.research.google.com/github/graykode/xlnet-Pytorch/blob/master/XLNet.ipynb) easily.
@@ -23,7 +23,6 @@ Also, You can run code in [Google Colab](https://colab.research.google.com/githu
 - Hyperparameters for Pretraining in Paper.
 
 <p align="center"><img width="300" src="images/hyperparameters.png" /> </p>
-
 #### Option
 
 - `—data`(String) : `.txt` file to train. It doesn't matter multiline text. Also, one file will be one batch tensor. Default : `data.txt`
@@ -37,7 +36,7 @@ Also, You can run code in [Google Colab](https://colab.research.google.com/githu
 - `—mask_beta`(Integer) : How many tokens to mask within each group. Default : `1`
 - `—num_predict`(Interger) : Num of tokens to predict. In Paper, it mean Partial Prediction. Default : `85`
 - `—mem_len`(Interger) : Number of steps to cache in Transformer-XL Architecture. Default : `384`
-- `—number_step`(Interger) : Number of Step(Epoch). Default : `100`
+- `—num_epoch`(Interger) : Number of Epoch. Default : `100`
 
 
 
